@@ -3,9 +3,11 @@
 // Only need to upload a single file, and don't need to worry about the other features of the toolkit.
 
 import { getIDToken } from '@actions/core';
+import { getOctokit } from '@actions/github';
 import { DefaultArtifactClient } from '@actions/artifact';
 
 const idToken = await getIDToken();
+const octokit = getOctokit(process.env.TOKEN!);
 // test uploading artifacts
 const artifact = new DefaultArtifactClient();
 const { id: artifactId } = await artifact.uploadArtifact(
