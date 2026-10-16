@@ -5,12 +5,14 @@ import { setTimeout } from "node:timers/promises";
 
 // ========== Prepare ==========
 execSync(`mkdir deploy`);
-execSync(`cp README.md deploy/index.html`);
+execSync(`cp README.md deploy/`);
+execSync(`cp index.html deploy/`);
 execSync(`tar --directory "deploy" -cvf "artifact.tar" .`);
+execSync(`zip artifact.zip artifact.tar`); // 压缩两次, 以满足deployment的要求
 
 const auth = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
 const artifactId = await uploadArtifact(auth, "artifact.tar", "artifact", {
-  mime_type: "application/x-tar" as any,
+  mime_type: "application/zip"
 });
 
 const idToken = await getIDToken();
