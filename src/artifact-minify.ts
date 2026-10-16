@@ -286,6 +286,7 @@ export async function deleteArtifact(
 }
 
 export async function deleteSpecificArtifact(
+  actions_runtime_token: string,
   name: string,
   config?: Partial<UploadConfig & SpecificBackendIdOrToken>,
 ): Promise<number> {
@@ -294,14 +295,13 @@ export async function deleteSpecificArtifact(
     ...config,
   };
 
-  const actions_runtime_token = config?.actions_runtime_token ??
-    process.env["ACTIONS_RUNTIME_TOKEN"]!;
-
+  // 如果提供了独立的 backend_id, 使用独立的 id 代替默认 id
   let workflow_run_backend_id = config?.workflow_run_backend_id;
   let workflow_job_run_backend_id = config?.workflow_job_run_backend_id;
   if (!workflow_run_backend_id || !workflow_job_run_backend_id) {
+    // 如果独立 id 不完整, 先尝试从提供的 token 中获取, 否则采用默认的 token
     [workflow_run_backend_id, workflow_job_run_backend_id] =
-      getBackendIdsFromToken(actions_runtime_token);
+      getBackendIdsFromToken(config?.actions_runtime_token ?? actions_runtime_token);
   }
 
   const twirpUrl = `${

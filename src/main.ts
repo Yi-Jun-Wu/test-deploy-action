@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { deleteArtifact, uploadArtifact } from "./artifact-minify.ts";
+import { deleteArtifact, deleteSpecificArtifact, uploadArtifact } from "./artifact-minify.ts";
 import { getIDToken, setOutput } from "./core.ts";
 import { setTimeout } from "node:timers/promises";
 
@@ -150,7 +150,8 @@ console.log("Deleting artifacts");
 
 // #ifdef USE_MINIFY_METHOD
 
-console.log(await deleteArtifact(auth, "page"));
+// console.log(await deleteArtifact(auth, "page"));
+console.log(await deleteSpecificArtifact(auth, "page"));
 
 // #else
 
