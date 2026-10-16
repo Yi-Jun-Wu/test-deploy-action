@@ -1,37 +1,39 @@
-import {createHash, randomUUID} from 'node:crypto'
-import {readFile} from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 
 const TWIRP_SERVICE = 'github.actions.results.api.v1.ArtifactService'
 const ARTIFACT_VERSION = 7
-// const ARTIFACT_CONTENT_TYPE = 'application/zip'  // valid .zip
-// const ARTIFACT_CONTENT_TYPE = 'application/x-tar' // valid .tar
-// const ARTIFACT_CONTENT_TYPE = 'application/x-7z-compressed' // valid .7z
-const ARTIFACT_CONTENT_TYPE = 'application/octet-stream' // valid .bin
 const BLOCK_SIZE = 8 * 1024 * 1024
+
 
 export async function upload(
   auth: string,
   url: string,
-  zipFilePath: string,
+  filePath: string,
+  mimeType: string,
   name: string,
   retention: number
 ): Promise<number> {
-  const archive = await readFile(zipFilePath)
+  const archive = await readFile(filePath)
   const digest = `sha256:${createHash('sha256').update(archive).digest('hex')}`
   const origin = new URL(url).origin
   const [workflowRunBackendId, workflowJobRunBackendId] = getBackendIdsFromToken(auth)
+  console.log("file:", filePath, "name", name);
 
+  console.log("Creating Artifact...")
   const created = await twirp(origin, auth, 'CreateArtifact', {
     workflow_run_backend_id: workflowRunBackendId,
     workflow_job_run_backend_id: workflowJobRunBackendId,
     name,
     version: ARTIFACT_VERSION,
-    mime_type: ARTIFACT_CONTENT_TYPE,
+    mime_type: mimeType,
     expires_at: getExpiration(retention)
   })
 
-  await uploadToBlob(created.signed_upload_url, archive)
+  console.log("Uploading Artifact...")
+  await uploadToBlob(created.signed_upload_url, archive, mimeType)
 
+  console.log("Finalizing Artifact...")
   const finalized = await twirp(origin, auth, 'FinalizeArtifact', {
     workflow_run_backend_id: workflowRunBackendId,
     workflow_job_run_backend_id: workflowJobRunBackendId,
@@ -40,6 +42,7 @@ export async function upload(
     hash: digest
   })
 
+  console.log("Artifact uploaded")
   return Number(finalized.artifact_id)
 }
 
@@ -77,7 +80,7 @@ async function twirp(
   return response.json()
 }
 
-async function uploadToBlob(signedUrl: string, body: Buffer): Promise<void> {
+async function uploadToBlob(signedUrl: string, body: Buffer, mimeType: string): Promise<void> {
   const version = new URL(signedUrl).searchParams.get('sv') ?? '2021-08-06'
   const prefix = randomUUID()
   const blockIds: string[] = []
@@ -94,7 +97,7 @@ async function uploadToBlob(signedUrl: string, body: Buffer): Promise<void> {
           'x-ms-date': new Date().toUTCString(),
           'Content-Type': 'application/octet-stream'
         },
-        body: chunk
+        body: new Uint8Array(chunk)
       }
     )
     if (response.status !== 201) {
@@ -110,7 +113,7 @@ async function uploadToBlob(signedUrl: string, body: Buffer): Promise<void> {
       'x-ms-version': version,
       'x-ms-date': new Date().toUTCString(),
       'Content-Type': 'application/xml; charset=utf-8',
-      'x-ms-blob-content-type': ARTIFACT_CONTENT_TYPE
+      'x-ms-blob-content-type': mimeType
     },
     body: Buffer.from(xml, 'utf8')
   })
