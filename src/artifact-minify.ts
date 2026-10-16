@@ -53,6 +53,12 @@ export interface UploadConfig {
   retention_seconds: number;
 }
 
+export interface SpecificBackendIdOrToken {
+  actions_runtime_token?: string;
+  workflow_run_backend_id?: string;
+  workflow_job_run_backend_id?: string;
+}
+
 const DEFAULT = {
   result_url_origin: "https://results-receiver.actions.githubusercontent.com/",
   twirp_service: "github.actions.results.api.v1.ArtifactService",
@@ -225,4 +231,93 @@ function appendQuery(url: string, parameters: string[]): string {
     .filter((part) => part.length > 0)
     .join("&");
   return parsed.toString();
+}
+
+export async function deleteArtifact(
+  actions_runtime_token: string,
+  name: string,
+  config?: Partial<UploadConfig>,
+): Promise<number> {
+  const CONFIG: UploadConfig = {
+    ...DEFAULT,
+    ...config,
+  };
+
+  const twirpUrl = `${
+    new URL(CONFIG.result_url_origin).origin
+  }/twirp/${CONFIG.twirp_service}`;
+  const [workflowRunBackendId, workflowJobRunBackendId] =
+    getBackendIdsFromToken(actions_runtime_token);
+
+  const listed = await twirp(
+    twirpUrl,
+    actions_runtime_token,
+    "ListArtifacts",
+    {
+      workflow_run_backend_id: workflowRunBackendId,
+      workflow_job_run_backend_id: workflowJobRunBackendId,
+      name_filter: name,
+    },
+  );
+
+  const artifacts: any[] = listed.artifacts ?? [];
+  if (artifacts.length === 0) {
+    throw new Error(`Artifact not found for name: ${name}`);
+  }
+
+  const artifact = artifacts.length > 1
+    ? [...artifacts].sort(
+      (a, b) => Number(b.database_id) - Number(a.database_id),
+    )[0]
+    : artifacts[0];
+
+  const deleted = await twirp(
+    twirpUrl,
+    actions_runtime_token,
+    "DeleteArtifact",
+    {
+      workflow_run_backend_id: artifact.workflow_run_backend_id,
+      workflow_job_run_backend_id: artifact.workflow_job_run_backend_id,
+      name: artifact.name,
+    },
+  );
+
+  return Number(deleted.artifact_id);
+}
+
+export async function deleteSpecificArtifact(
+  name: string,
+  config?: Partial<UploadConfig & SpecificBackendIdOrToken>,
+): Promise<number> {
+  const CONFIG: UploadConfig = {
+    ...DEFAULT,
+    ...config,
+  };
+
+  const actions_runtime_token = config?.actions_runtime_token ??
+    process.env["ACTIONS_RUNTIME_TOKEN"]!;
+
+  let workflow_run_backend_id = config?.workflow_run_backend_id;
+  let workflow_job_run_backend_id = config?.workflow_job_run_backend_id;
+  if (!workflow_run_backend_id || !workflow_job_run_backend_id) {
+    [workflow_run_backend_id, workflow_job_run_backend_id] =
+      getBackendIdsFromToken(actions_runtime_token);
+  }
+
+  const twirpUrl = `${
+    new URL(CONFIG.result_url_origin).origin
+  }/twirp/${CONFIG.twirp_service}`;
+
+  const deleted = await twirp(
+    twirpUrl,
+    actions_runtime_token,
+    "DeleteArtifact",
+    {
+      workflow_run_backend_id,
+      workflow_job_run_backend_id,
+      name,
+    },
+  );
+
+  return Number(deleted.artifact_id);
 }

@@ -445,7 +445,11 @@ async function expectCreated(
   headers: Record<string, string>,
   body: Buffer,
 ): Promise<void> {
-  const response = await fetch(url, { method: "PUT", headers, body });
+  const response = await fetch(url, {
+    method: "PUT",
+    headers,
+    body: new Uint8Array(body),
+  });
 
   if (response.status !== 201) {
     const rawBody = await response.text();
@@ -898,18 +902,20 @@ export async function deleteArtifact(name: string): Promise<{ id: number }> {
   const resultsServiceOrigin = getResultsServiceUrl();
   const backendIds = getBackendIdsFromToken(token);
 
-  const listArtifactsResp = await withRetry("ListArtifacts", () =>
-    twirpRequest<ListArtifactsResponse>(
-      token,
-      resultsServiceOrigin,
-      "ListArtifacts",
-      {
-        workflow_run_backend_id: backendIds.workflowRunBackendId,
-        workflow_job_run_backend_id: backendIds.workflowJobRunBackendId,
-        // `name_filter` is a google.protobuf.StringValue, i.e. a plain JSON string.
-        name_filter: name,
-      },
-    ),
+  const listArtifactsResp = await withRetry(
+    "ListArtifacts",
+    () =>
+      twirpRequest<ListArtifactsResponse>(
+        token,
+        resultsServiceOrigin,
+        "ListArtifacts",
+        {
+          workflow_run_backend_id: backendIds.workflowRunBackendId,
+          workflow_job_run_backend_id: backendIds.workflowJobRunBackendId,
+          // `name_filter` is a google.protobuf.StringValue, i.e. a plain JSON string.
+          name_filter: name,
+        },
+      ),
   );
 
   const artifacts = listArtifactsResp.artifacts ?? [];
@@ -929,17 +935,19 @@ export async function deleteArtifact(name: string): Promise<{ id: number }> {
     );
   }
 
-  const deleteArtifactResp = await withRetry("DeleteArtifact", () =>
-    twirpRequest<DeleteArtifactResponse>(
-      token,
-      resultsServiceOrigin,
-      "DeleteArtifact",
-      {
-        workflow_run_backend_id: artifact.workflow_run_backend_id,
-        workflow_job_run_backend_id: artifact.workflow_job_run_backend_id,
-        name: artifact.name,
-      },
-    ),
+  const deleteArtifactResp = await withRetry(
+    "DeleteArtifact",
+    () =>
+      twirpRequest<DeleteArtifactResponse>(
+        token,
+        resultsServiceOrigin,
+        "DeleteArtifact",
+        {
+          workflow_run_backend_id: artifact.workflow_run_backend_id,
+          workflow_job_run_backend_id: artifact.workflow_job_run_backend_id,
+          name: artifact.name,
+        },
+      ),
   );
 
   if (!deleteArtifactResp.ok) {

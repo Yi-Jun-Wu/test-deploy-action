@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { uploadArtifact } from "./artifact-minify.ts";
+import { deleteArtifact, uploadArtifact } from "./artifact-minify.ts";
 import { getIDToken, setOutput } from "./core.ts";
 import { setTimeout } from "node:timers/promises";
 
@@ -136,7 +136,7 @@ console.log("Deployment finished. Check the status at:", status_url);
 
 setOutput("page_url", page_url);
 
-console.log("Deleting artifacts")
+console.log("Deleting artifacts");
 // curl -L \
 //   -X DELETE \
 //   -H "Accept: application/vnd.github+json" \
@@ -145,11 +145,19 @@ console.log("Deleting artifacts")
 //   https://api.github.com/repos/OWNER/REPO/actions/artifacts/ARTIFACT_ID
 
 // const deleteUrl = `https://api.github.com/repos/${OWNER}/${REPO}/actions/artifacts/${artifactId}`
-// const delResponse = await fetch(deleteUrl, { method: "DELETE", headers: GITHUB_HEADERS }) // TODO: failed: 403 
-// console.log("Delete Artifact Response(204):", delResponse.status, delResponse.statusText) 
+// const delResponse = await fetch(deleteUrl, { method: "DELETE", headers: GITHUB_HEADERS }) // TODO: failed: 403
+// console.log("Delete Artifact Response(204):", delResponse.status, delResponse.statusText)
 
-import { deleteArtifact as deleteArtifactOld } from "./artifact.ts";
-process.env["ACTIONS_RESULTS_URL"] = process.env["MY_ACTIONS_RESULTS_URL"]!;
-process.env["ACTIONS_RUNTIME_TOKEN"] = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
-const { id: deletedId } = await deleteArtifactOld("page");
-console.log("Deleted Artifact ID:", deletedId);
+// #ifdef USE_MINIFY_METHOD
+
+console.log(await deleteArtifact(auth, "page"));
+
+// #else
+
+// import { deleteArtifact as deleteArtifactOld } from "./artifact.ts";
+// process.env["ACTIONS_RESULTS_URL"] = process.env["MY_ACTIONS_RESULTS_URL"]!;
+// process.env["ACTIONS_RUNTIME_TOKEN"] = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
+// const { id: deletedId } = await deleteArtifactOld("page");
+// console.log("Deleted Artifact ID:", deletedId);
+
+// #endif
