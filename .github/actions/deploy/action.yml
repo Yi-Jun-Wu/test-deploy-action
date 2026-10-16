@@ -1,10 +1,23 @@
-name: 'Upload Artifacts'
-description: 'Test upload'
+name: 'Deploy GitHub Pages site'
+description: 'A GitHub Action to deploy an dist folder as a GitHub Pages site'
 author: 'GitHub'
 runs:
   using: 'node24'
-  main: 'index.js'
+  main: 'dist/index.mjs'
+inputs:
+  token:
+    description: 'GitHub token'
+    default: ${{ github.token }}
+    required: true
+  path:
+    description: 'Path of the directory containing the static assets.'
+    required: true
+    default: "dist/"
+  expire:
+    description: 'Duration after which artifact will be deleted in seconds.'
+    required: true
+    default: 30
 
 outputs:
-  token:
-    description: tokens
+  page_url:
+    description: 'URL to deployed GitHub Pages'
