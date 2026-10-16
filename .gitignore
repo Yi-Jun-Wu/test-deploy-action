@@ -1,5 +1,6 @@
 # vscode
 /.vscode/
+/ref_artifact/
 
 # Logs
 logs

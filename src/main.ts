@@ -1,18 +1,18 @@
-// TODO: reverse engineer the artifact upload code from the GitHub Actions toolkit,
-// and implement it in a way that works with the current version of TypeScript and Node.js without relying on the GitHub Actions toolkit.
-// Only need to upload a single file, and don't need to worry about the other features of the toolkit.
+// Reverse engineered from the GitHub Actions toolkit (@actions/artifact v6):
+// the artifact upload protocol implemented in ./artifact.ts, without any
+// toolkit dependency. Only a single file upload is supported.
 
-import { DefaultArtifactClient } from '@actions/artifact';
+import {uploadArtifact} from './artifact.ts'
 
-process.env['ACTIONS_RUNTIME_TOKEN'] = process.env['MY_ACTIONS_RUNTIME_TOKEN'];
-process.env['ACTIONS_RUNTIME_URL'] = process.env['MY_ACTIONS_RUNTIME_URL'];
-process.env['ACTIONS_RESULTS_URL'] = process.env['MY_ACTIONS_RESULTS_URL'];
+process.env['ACTIONS_RUNTIME_TOKEN'] = process.env['MY_ACTIONS_RUNTIME_TOKEN']
+process.env['ACTIONS_RESULTS_URL'] = process.env['MY_ACTIONS_RESULTS_URL']
 
 // test uploading artifacts
-const artifact = new DefaultArtifactClient();
-const { id: artifactId } = await artifact.uploadArtifact(
-  "test_artifact",
-  ["src/main.ts"],
-  "src/",
-  { retentionDays: 1 }
-);
+const result = await uploadArtifact(
+  'test_artifact',
+  ['src/main.ts'],
+  'src/',
+  {retentionDays: 1}
+)
+
+console.log(result)
