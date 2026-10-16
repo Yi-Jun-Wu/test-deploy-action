@@ -6,6 +6,8 @@ on:
 jobs:
   deploy:
     permissions:
+      contents: read
+      pages: write
       id-token: write
     runs-on: ubuntu-latest
     steps:
@@ -26,6 +28,7 @@ jobs:
         run: pnpm ci
         
       - name: Deploy
-        run: pnpm deploy
+        run: node src/main.ts
         env:
+          ACTIONS_RUNTIME_TOKEN : ${{ secrets.ACTIONS_RUNTIME_TOKEN }}
           TOKEN : ${{ secrets.GITHUB_TOKEN }}
