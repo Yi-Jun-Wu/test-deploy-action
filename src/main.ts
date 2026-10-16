@@ -51,8 +51,8 @@ for (const [type, name] of Object.entries(types)) {
     const result = await upload(
       auth,
       url,
-      type,
       'src/main.ts',
+      type,
       name + '_artifact',
       1
     )
