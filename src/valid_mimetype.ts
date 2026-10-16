@@ -28,7 +28,7 @@ const types: [string, string][] = [["example/example", "example_type"]];
 for (const f of files) {
   types.push(...await read_csv(f));
 }
-// console.log(types)
+console.log(types.length)
 
 const valid_list: string[] = [];
 let idx = 0;
@@ -60,3 +60,54 @@ await upload(
   'valid_mimetype.json',
   7
 )
+
+
+/*
+Results:
+Total types:  2377
+Failed types: 2339
+  Error: CreateArtifact failed (400): {"code":"invalid_argument","msg":"mime_type a valid mime_type is...
+Success:      38
+
+They are:
+[
+  "application/gzip",
+  "application/javascript",
+  "application/json",
+  "application/msword",
+  "application/octet-stream",
+  "application/pdf",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-fontobject",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.rar",
+  "application/wasm",
+  "application/xml",
+  "application/zip",
+  "audio/flac",
+  "audio/mpeg",
+  "audio/ogg",
+  "font/otf",
+  "font/ttf",
+  "font/woff",
+  "font/woff2",
+  "image/bmp",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/svg+xml",
+  "image/tiff",
+  "image/webp",
+  "text/css",
+  "text/csv",
+  "text/html",
+  "text/markdown",
+  "text/plain",
+  "text/xml",
+  "video/mp4",
+  "video/quicktime"
+]
+*/
