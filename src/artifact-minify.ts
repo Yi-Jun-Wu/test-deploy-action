@@ -53,7 +53,7 @@ export interface UploadConfig {
   retention_seconds: number;
 }
 
-const DEFAULT_CONFIG = {
+const DEFAULT = {
   result_url_origin: "https://results-receiver.actions.githubusercontent.com/",
   twirp_service: "github.actions.results.api.v1.ArtifactService",
   artifact_version: 7,
@@ -69,7 +69,14 @@ export async function uploadArtifact(
   config?: Partial<UploadConfig>,
 ): Promise<number> {
   const name = upload_name ?? basename(file_path);
-  const CONFIG: UploadConfig = Object.assign({}, config ?? {}, DEFAULT_CONFIG);
+  const CONFIG: UploadConfig = {
+    result_url_origin: config?.result_url_origin || DEFAULT.result_url_origin,
+    twirp_service: config?.twirp_service || DEFAULT.twirp_service,
+    artifact_version: config?.artifact_version || DEFAULT.artifact_version,
+    block_size: config?.block_size || DEFAULT.block_size,
+    mime_type: config?.mime_type || DEFAULT.mime_type,
+    retention_seconds: config?.retention_seconds || DEFAULT.retention_seconds,
+  };
 
   const archive = await readFile(file_path);
   const digest = `sha256:${createHash("sha256").update(archive).digest("hex")}`;
