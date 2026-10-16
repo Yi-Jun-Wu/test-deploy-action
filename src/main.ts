@@ -5,7 +5,7 @@ import { setTimeout } from "node:timers/promises";
 
 // ========== Prepare ==========
 execSync(`mkdir deploy`);
-execSync(`cp Readme.md deploy/index.html`);
+execSync(`cp README.md deploy/index.html`);
 execSync(`tar --directory "deploy" -cvf "artifact.tar" .`);
 
 const auth = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
