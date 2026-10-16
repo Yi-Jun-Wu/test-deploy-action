@@ -24,26 +24,30 @@ const auth = process.env['MY_ACTIONS_RUNTIME_TOKEN']!
 const url = process.env['MY_ACTIONS_RESULTS_URL']!
 
 const types = {
-  'application/zip': "zip", // valid .zip
-  'application/x-tar': "tar", // valid .tar
-  'application/x-7z-compressed': "7z", // valid .7z
-  'application/octet-stream': "bin", // valid (no extension)
-  'application/x-gzip': "gzip",
-  'application/x-bzip2': "bzip2",
-  'application/x-xz': "xz",
-  'application/x-rar-compressed': "rar",
-  'application/x-lzip': "lzip",
-  'application/x-lzma': "lzma",
-  'application/x-lzop': "lzop",
-  'application/x-compress': "Z",
-  'application/x-apple-diskimage': "dmg",
-  'application/x-deb': "deb",
-  'application/x-rpm': "rpm",
-  'application/x-msdownload': "exe",
-  'application/x-shockwave-flash': "swf",
-  'application/x-java-archive': "jar",
-  'application/x-python-code': "pyc",
-  'application/x-perl': "pl",
+  'application/json': 'json',
+  'application/xml': 'xml',
+  'text/plain': 'txt',
+  
+  // 'application/zip': "zip", // valid .zip
+  // 'application/x-tar': "tar", // valid .tar
+  // 'application/x-7z-compressed': "7z", // valid .7z
+  // 'application/octet-stream': "bin", // valid (no extension)
+  // 'application/x-gzip': "gzip", // invalid!
+  // 'application/x-bzip2': "bzip2", // invalid!
+  // 'application/x-xz': "xz", // invalid!
+  // 'application/x-rar-compressed': "rar",  // invalid!
+  // 'application/x-lzip': "lzip", // invalid!
+  // 'application/x-lzma': "lzma", // invalid!
+  // 'application/x-lzop': "lzop", // invalid!
+  // 'application/x-compress': "Z",  // invalid!
+  // 'application/x-apple-diskimage': "dmg", // invalid!
+  // 'application/x-deb': "deb", // invalid!
+  // 'application/x-rpm': "rpm", // invalid!
+  // 'application/x-msdownload': "exe",  // invalid!
+  // 'application/x-shockwave-flash': "swf", // invalid!
+  // 'application/x-java-archive': "jar",  // invalid!
+  // 'application/x-python-code': "pyc", // invalid!
+  // 'application/x-perl': "pl", // invalid!
 };
 
 for (const [type, name] of Object.entries(types)) {
