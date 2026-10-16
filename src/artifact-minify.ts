@@ -5,7 +5,8 @@ const TWIRP_SERVICE = 'github.actions.results.api.v1.ArtifactService'
 const ARTIFACT_VERSION = 7
 // const ARTIFACT_CONTENT_TYPE = 'application/zip'  // valid .zip
 // const ARTIFACT_CONTENT_TYPE = 'application/x-tar' // valid .tar
-const ARTIFACT_CONTENT_TYPE = 'application/x-7z-compressed'
+// const ARTIFACT_CONTENT_TYPE = 'application/x-7z-compressed' // valid .7z
+const ARTIFACT_CONTENT_TYPE = 'application/octet-stream' // valid .bin
 const BLOCK_SIZE = 8 * 1024 * 1024
 
 export async function upload(
