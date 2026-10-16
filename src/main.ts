@@ -11,23 +11,12 @@ execSync(
   `tar --dereference --hard-dereference --directory "deploy" -cvf "artifact.tar" .`,
 );
 
-// #ifndef USE_OLD_METHOD
-
 execSync(`zip page.zip artifact.tar`); // 压缩两次, 以满足deployment的要求
 const auth = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
 const artifactId = await uploadArtifact(auth, "page.zip", "artifact", {
   mime_type: "application/zip",
 });
 
-// #else
-
-// import { uploadArtifact as uploadArtifactOld } from "./artifact.ts";
-// process.env["ACTIONS_RESULTS_URL"] = process.env["MY_ACTIONS_RESULTS_URL"]!;
-// process.env["ACTIONS_RUNTIME_TOKEN"] = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
-// const resp = await uploadArtifactOld("page", ["artifact.tar"], "./");
-// const artifactId = resp.id;
-
-// #endif
 
 const idToken = await getIDToken();
 const TOKEN = process.env["GITHUB_TOKEN"]!;
