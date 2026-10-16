@@ -24,10 +24,22 @@ const auth = process.env['MY_ACTIONS_RUNTIME_TOKEN']!
 const url = process.env['MY_ACTIONS_RESULTS_URL']!
 
 const types = {
-  'application/json': 'json',
-  'application/xml': 'xml',
-  'text/plain': 'txt',
-  
+  // 'application/json': 'json', // valid .xml
+  // 'application/xml': 'xml', // valid .json
+  // 'text/plain': 'txt',  // valid .txt
+  'application/pdf':'pdf',
+  'application/msword':'msword',
+  'application/json':'json',
+  'application/mp4':'mp4',
+  'application/ogg':'ogg',
+  'application/rtf':'rtf',
+  'application/vnd.adobe.xdp+xml':'xml',
+  'application/vnd.ms-excel':'excel',
+  'application/vnd.rar':'rar',
+  'application/wasm':'wasm',
+  'application/winhlp':'winhlp',
+  'application/yaml':'yaml',
+
   // 'application/zip': "zip", // valid .zip
   // 'application/x-tar': "tar", // valid .tar
   // 'application/x-7z-compressed': "7z", // valid .7z
