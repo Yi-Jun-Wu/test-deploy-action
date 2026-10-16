@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
-import { uploadArtifact } from "./artifact-minify.ts";
+// import { uploadArtifact } from "./artifact-minify.ts";
+import { uploadArtifact } from "./artifact.ts";
 import { getIDToken, setOutput } from "./core.ts";
 import { setTimeout } from "node:timers/promises";
 
@@ -7,13 +8,15 @@ import { setTimeout } from "node:timers/promises";
 execSync(`mkdir deploy`);
 execSync(`cp README.md deploy/`);
 execSync(`cp index.html deploy/`);
-execSync(`tar --directory "deploy" -cvf "artifact.tar" .`);
-execSync(`zip artifact.zip artifact.tar`); // 压缩两次, 以满足deployment的要求
+execSync(`tar --dereference --hard-dereference --directory "deploy" -cvf "artifact.tar" .`);
+// execSync(`zip artifact.zip artifact.tar`); // 压缩两次, 以满足deployment的要求
 
 const auth = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
-const artifactId = await uploadArtifact(auth, "artifact.tar", "artifact", {
-  mime_type: "application/zip"
-});
+const resp = await uploadArtifact("page", ["artifact.tar"], "./");
+const artifactId = resp.id;
+// const artifactId = await uploadArtifact(auth, "artifact.tar", "artifact", {
+//   mime_type: "application/zip"
+// });
 
 const idToken = await getIDToken();
 const TOKEN = process.env["GITHUB_TOKEN"]!;
