@@ -17,11 +17,11 @@ inputs:
     default: 'dist/'
   expire:
     description: >-
-      Duration in seconds to poll the deployment before giving up. The uploaded
-      artifact is deleted once it is no longer needed. Set to 0 to keep the
-      artifact (it will then remain until its retention period ends).
-    required: true
-    default: '30'
+      Duration in seconds to poll the deployment before giving up. When set,
+      the uploaded artifact is deleted once it is no longer needed and the
+      logs are emitted after that deletion. When omitted (or 0), the artifact
+      is kept until its retention period ends and logs are streamed live.
+    required: false
 
 outputs:
   page_url:

@@ -3,8 +3,12 @@
 A dependency-free GitHub Action that deploys a directory to GitHub Pages. It
 packages the directory, uploads it as a workflow artifact using the Actions
 artifact protocol implemented in this repository, and asks the Pages REST API
-to publish it. Once the deployment no longer needs the artifact it is deleted
-(to free up storage) unless `expire` is set to `0`.
+to publish it.
+
+When `expire` is set, the artifact is deleted once the deployment no longer
+needs it and the log output is buffered and emitted only after that deletion.
+When `expire` is omitted (or `0`), the artifact is kept until its retention
+period ends and logs are streamed live.
 
 Unlike `actions/deploy-pages`, this action pulls nothing from the network at
 runtime beyond GitHub itself: the artifact upload is implemented directly in
@@ -48,7 +52,7 @@ jobs:
 | -------- | -------- | ---------------- | ----------- |
 | `token`  | yes      | `${{ github.token }}` | GitHub token used to call the Pages deployment API. |
 | `path`   | yes      | `dist/`          | Directory whose contents are deployed. |
-| `expire` | yes      | `30`             | Seconds to poll the deployment before giving up. When positive the artifact is deleted once it is no longer needed; when `0` the artifact is left in place until its retention period ends. |
+| `expire` | no       | _(none)_         | Seconds to poll the deployment before giving up. When set, the artifact is deleted once it is no longer needed (and logs are emitted after deletion); when omitted/`0` the artifact is kept until its retention period ends. |
 
 ## Outputs
 
@@ -63,9 +67,13 @@ jobs:
 2. The zip is uploaded via the Actions artifact service and its id is retrieved.
 3. `POST /repos/{owner}/{repo}/pages/deployments` is called with the artifact
    id, the `GITHUB_SHA` build version and the OIDC token from `getIDToken()`.
-4. The deployment status is polled until it reaches a terminal state. The
-   artifact is deleted as soon as the deployment stops needing it (or when the
-   `expire` deadline is reached).
+4. The deployment status is polled until it reaches a terminal state. When
+   `expire` is set the artifact is deleted as soon as the deployment stops
+   needing it (or when the `expire` deadline is reached), and the buffered
+   logs are flushed afterwards.
+
+The artifact retention defaults to `expire + 30` seconds when `expire` is set,
+or one day otherwise.
 
 ## Building
 

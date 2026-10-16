@@ -16,13 +16,14 @@
  *   4. Poll the returned `status_url` until a terminal status. When
  *      `expireTime` is a positive number the artifact is deleted as soon as the
  *      deployment no longer needs it (and after the deadline); when it is `0`
- *      or omitted the artifact is never deleted.
+ *      or omitted the artifact is never deleted. While deletion is enabled the
+ *      log output is buffered and only emitted once the artifact has been
+ *      deleted.
  */
 
 import { execSync } from "node:child_process";
 import { join } from "node:path";
-import { platform } from "node:os";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   deleteSpecificArtifact,
@@ -32,6 +33,15 @@ import {
 
 /** GitHub REST API version header sent with every request. */
 const GITHUB_API_VERSION = "2026-03-10";
+
+/** Default artifact retention when deletion is disabled (`expireTime` unset). */
+const DEFAULT_RETENTION_SECONDS = 86400;
+
+/**
+ * Extra time (seconds) added to `expireTime` for the default retention, so the
+ * artifact outlives the polling window before the service reclaims it.
+ */
+const RETENTION_GRACE_SECONDS = 30;
 
 /** Controls a single Pages deployment performed by {@link deploy}. */
 export interface DeployOptions {
@@ -92,7 +102,10 @@ export interface DeployOptions {
   /** Pages environment name. Defaults to `"github-pages"`. */
   environment?: string;
 
-  /** Artifact retention in seconds. Defaults to one day (`86400`). */
+  /**
+   * Artifact retention in seconds. Defaults to `expireTime + 30` when
+   * `expireTime` is set, or one day (`86400`) otherwise.
+   */
   retentionSeconds?: number;
 
   /**
@@ -125,7 +138,7 @@ export interface DeployResult {
  * @throws On any archive, upload, API or status-polling failure.
  */
 export async function deploy(options: DeployOptions): Promise<DeployResult> {
-  const log = options.log ?? ((message: string) => console.log(message));
+  const emit = options.log ?? ((message: string) => console.log(message));
 
   const owner = options.owner ?? process.env["GITHUB_REPOSITORY_OWNER"];
   if (!owner) {
@@ -145,6 +158,19 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     );
   }
 
+  const manageArtifact = typeof options.expireTime === "number" &&
+    options.expireTime > 0;
+
+  // While the artifact is being managed, hold the log output until the
+  // artifact has actually been deleted so it is emitted as a single, ordered
+  // block.
+  const buffered: string[] = [];
+  const log = manageArtifact
+    ? (message: string) => {
+      buffered.push(message);
+    }
+    : emit;
+
   const apiBaseUrl = options.apiBaseUrl ?? "https://api.github.com";
   const environment = options.environment ?? "github-pages";
   const artifactName = options.artifactName ??
@@ -153,166 +179,179 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
       () => Math.random().toString(36).slice(2, 10),
     ).join("-");
 
-  const manageArtifact = typeof options.expireTime === "number" &&
-    options.expireTime > 0;
+  const retentionSeconds = options.retentionSeconds ??
+    (manageArtifact
+      ? options.expireTime! + RETENTION_GRACE_SECONDS
+      : DEFAULT_RETENTION_SECONDS);
 
   const tempDir = options.tempDir ?? tmpdir();
   const tarPath = join(tempDir, "artifact.tar");
   const zipPath = join(tempDir, "artifact.zip");
 
-  // Package the directory as a tar (platform-specific flags), then wrap it in a
-  // zip: GitHub Pages only accepts zip artifacts, and the tar must remain the
-  // single top-level entry inside it.
-  switch (platform()) {
-    case "win32":
-      execSync(
-        `tar --dereference --hard-dereference --directory "${options.filePath}" -cvf "${tarPath}" ` +
-          `--exclude=.git --exclude=.github --exclude=".[^/]*" --force-local .`,
-      );
-      break;
-    case "darwin":
-      execSync(
-        `gtar --dereference --hard-dereference --directory "${options.filePath}" -cvf "${tarPath}" ` +
-          `--exclude=.git --exclude=.github --exclude=".[^/]*" .`,
-      );
-      break;
-    case "linux":
-    default:
-      execSync(
-        `tar --dereference --hard-dereference --directory "${options.filePath}" -cvf "${tarPath}" ` +
-          `--exclude=.git --exclude=.github --exclude=".[^/]*" .`,
-      );
-      break;
-  }
-  execSync(`zip artifact.zip artifact.tar`, { cwd: tempDir });
+  try {
+    // Package the directory as a tar (platform-specific flags), then wrap it in
+    // a zip: GitHub Pages only accepts zip artifacts, and the tar must remain
+    // the single top-level entry inside it.
+    switch (platform()) {
+      case "win32":
+        execSync(
+          `tar --dereference --hard-dereference --directory "${options.filePath}" -cvf "${tarPath}" ` +
+            `--exclude=.git --exclude=.github --exclude=".[^/]*" --force-local .`,
+        );
+        break;
+      case "darwin":
+        execSync(
+          `gtar --dereference --hard-dereference --directory "${options.filePath}" -cvf "${tarPath}" ` +
+            `--exclude=.git --exclude=.github --exclude=".[^/]*" .`,
+        );
+        break;
+      case "linux":
+      default:
+        execSync(
+          `tar --dereference --hard-dereference --directory "${options.filePath}" -cvf "${tarPath}" ` +
+            `--exclude=.git --exclude=.github --exclude=".[^/]*" .`,
+        );
+        break;
+    }
+    execSync(`zip artifact.zip artifact.tar`, { cwd: tempDir });
 
-  const artifactConfig: Partial<UploadConfig> = {
-    mime_type: "application/zip",
-    retention_seconds: options.retentionSeconds ?? 86400,
-    ...options.artifactConfig,
-  };
+    const artifactConfig: Partial<UploadConfig> = {
+      mime_type: "application/zip",
+      retention_seconds: retentionSeconds,
+      ...options.artifactConfig,
+    };
 
-  const artifactId = await uploadArtifact(
-    options.actionsRuntimeToken,
-    zipPath,
-    artifactName,
-    artifactConfig,
-  );
-  log(`Uploaded Artifact ID: ${artifactId}`);
-
-  const startTime = performance.now();
-
-  const headers = {
-    "Accept": "application/vnd.github+json",
-    "Authorization": `Bearer ${options.githubToken}`,
-    "X-GitHub-Api-Version": GITHUB_API_VERSION,
-  };
-
-  const deployResponse = await fetch(
-    `${apiBaseUrl}/repos/${owner}/${repo}/pages/deployments`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        artifact_id: artifactId,
-        environment,
-        pages_build_version: buildVersion,
-        oidc_token: options.oidcToken,
-      }),
-    },
-  );
-  if (!deployResponse.ok) {
-    throw new Error(
-      `Failed to deploy pages: ${deployResponse.status} ${deployResponse.statusText} - ${await deployResponse.text()}`,
-    );
-  }
-  const { id: deploymentId, status_url, page_url } = await deployResponse.json();
-  log(`Deploying Pages to: ${page_url} Deployment ID: ${deploymentId}`);
-
-  let deletedArtifactId: number | undefined;
-  const deleteUploadedArtifact = async (): Promise<void> => {
-    deletedArtifactId = await deleteSpecificArtifact(
+    const artifactId = await uploadArtifact(
       options.actionsRuntimeToken,
+      zipPath,
       artifactName,
       artifactConfig,
     );
-    log(`Deleted Artifact ID: ${deletedArtifactId}`);
-    log(`Artifact Existing Time: ${performance.now() - startTime} ms`);
-  };
+    log(`Uploaded Artifact ID: ${artifactId}`);
 
-  let fileDeleted = false;
-  let status: string | undefined = undefined;
-  let sleepTime = 20;
-  const deadline = manageArtifact
-    ? startTime + options.expireTime! * 1000
-    : Infinity;
+    const startTime = performance.now();
 
-  try {
-    while (performance.now() < deadline) {
-      await sleep(sleepTime);
-      sleepTime = Math.min(Math.round(sleepTime * 1.5), 5000);
+    const headers = {
+      "Accept": "application/vnd.github+json",
+      "Authorization": `Bearer ${options.githubToken}`,
+      "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    };
 
-      const statusResponse = await fetch(status_url, { headers });
-      if (!statusResponse.ok) {
-        throw new Error(
-          `Failed to get deployment status: ${statusResponse.status} ${statusResponse.statusText} - ${await statusResponse.text()}`,
-        );
-      }
-      const statusData = await statusResponse.json();
-      if (statusData.status !== status) {
-        log(`Deployment status: ${statusData.status}`);
-        status = statusData.status;
-      }
-
-      let terminal = false;
-      switch (status) {
-        case "deployment_queued":
-        case "deployment_in_progress":
-        case "syncing_files":
-          // The artifact is still needed; wait for the next status update.
-          break;
-        case "succeed":
-          terminal = true;
-        // fall through
-        case "finished_file_sync":
-        case "updating_pages":
-        case "purging_cdn":
-          // The artifact is no longer needed for the deployment.
-          if (manageArtifact && !fileDeleted) {
-            await deleteUploadedArtifact();
-            fileDeleted = true;
-          }
-          break;
-        case "deployment_attempt_error":
-          log("Deploy attempt error, retrying");
-          break;
-        case "deployment_cancelled":
-        case "deployment_failed":
-        case "deployment_content_failed":
-        case "deployment_lost":
-          terminal = true;
-          break;
-        default:
-          log(`Unknown status: ${status}`);
-          break;
-      }
-      if (terminal) {
-        break;
-      }
+    const deployResponse = await fetch(
+      `${apiBaseUrl}/repos/${owner}/${repo}/pages/deployments`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          artifact_id: artifactId,
+          environment,
+          pages_build_version: buildVersion,
+          oidc_token: options.oidcToken,
+        }),
+      },
+    );
+    if (!deployResponse.ok) {
+      throw new Error(
+        `Failed to deploy pages: ${deployResponse.status} ${deployResponse.statusText} - ${await deployResponse
+          .text()}`,
+      );
     }
-  } catch (error) {
-    log(`Error occurred while waiting for deployment: ${error}`);
-  }
+    const { id: deploymentId, status_url, page_url } = await deployResponse
+      .json();
+    log(`Deploying Pages to: ${page_url} Deployment ID: ${deploymentId}`);
 
-  // Clean up when the deployment did not already delete the artifact.
-  if (manageArtifact && !fileDeleted) {
-    await deleteUploadedArtifact();
-  }
+    let deletedArtifactId: number | undefined;
+    const deleteUploadedArtifact = async (): Promise<void> => {
+      deletedArtifactId = await deleteSpecificArtifact(
+        options.actionsRuntimeToken,
+        artifactName,
+        artifactConfig,
+      );
+      log(`Deleted Artifact ID: ${deletedArtifactId}`);
+      log(`Artifact Existing Time: ${performance.now() - startTime} ms`);
+    };
 
-  return {
-    pageUrl: page_url ?? "",
-    deploymentId,
-    status,
-    deletedArtifactId,
-  };
+    let fileDeleted = false;
+    let status: string | undefined = undefined;
+    let sleepTime = 20;
+    const deadline = manageArtifact
+      ? startTime + options.expireTime! * 1000
+      : Infinity;
+
+    try {
+      while (performance.now() < deadline) {
+        await sleep(sleepTime);
+        sleepTime = Math.min(Math.round(sleepTime * 1.5), 5000);
+
+        const statusResponse = await fetch(status_url, { headers });
+        if (!statusResponse.ok) {
+          throw new Error(
+            `Failed to get deployment status: ${statusResponse.status} ${statusResponse.statusText} - ${await statusResponse
+              .text()}`,
+          );
+        }
+        const statusData = await statusResponse.json();
+        if (statusData.status !== status) {
+          log(`Deployment status: ${statusData.status}`);
+          status = statusData.status;
+        }
+
+        let terminal = false;
+        switch (status) {
+          case "deployment_queued":
+          case "deployment_in_progress":
+          case "syncing_files":
+            // The artifact is still needed; wait for the next status update.
+            break;
+          case "succeed":
+            terminal = true;
+          // fall through
+          case "finished_file_sync":
+          case "updating_pages":
+          case "purging_cdn":
+            // The artifact is no longer needed for the deployment.
+            if (manageArtifact && !fileDeleted) {
+              await deleteUploadedArtifact();
+              fileDeleted = true;
+            }
+            break;
+          case "deployment_attempt_error":
+            log("Deploy attempt error, retrying");
+            break;
+          case "deployment_cancelled":
+          case "deployment_failed":
+          case "deployment_content_failed":
+          case "deployment_lost":
+            terminal = true;
+            break;
+          default:
+            log(`Unknown status: ${status}`);
+            break;
+        }
+        if (terminal) {
+          break;
+        }
+      }
+    } catch (error) {
+      log(`Error occurred while waiting for deployment: ${error}`);
+    }
+
+    // Clean up when the deployment did not already delete the artifact.
+    if (manageArtifact && !fileDeleted) {
+      await deleteUploadedArtifact();
+    }
+
+    return {
+      pageUrl: page_url ?? "",
+      deploymentId,
+      status,
+      deletedArtifactId,
+    };
+  } finally {
+    // Flush the buffered log only once the artifact has been deleted (or the
+    // flow has failed), so callers see the complete picture at once.
+    for (const message of buffered) {
+      emit(message);
+    }
+  }
 }

@@ -26,8 +26,9 @@ jobs:
 
       - name: Deploy
         id: deployment
-        uses: ./.github/actions/deploy
+        # uses: ./.github/actions/deploy
+        uses: Yi-Jun-Wu/test-deploy-action/.github/actions/deploy@main
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           path: dist/
-          expire: '30'
+          expire: 10

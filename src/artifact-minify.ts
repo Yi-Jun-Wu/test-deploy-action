@@ -43,6 +43,8 @@ export const VALID_MIME_TYPE = [
   "application/vnd.rar",
   "application/wasm",
   "application/xml",
+  "application/x-tar",
+  "application/x-7z-compressed",
   "application/zip",
   "audio/flac",
   "audio/mpeg",
