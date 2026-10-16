@@ -33,5 +33,6 @@ jobs:
           script: |
             core.exportVariable('MY_ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN);
             core.exportVariable('MY_ACTIONS_RUNTIME_URL', process.env.ACTIONS_RUNTIME_URL);
+            core.exportVariable('MY_ACTIONS_RESULT_URL', process.env.ACTIONS_RESULT_URL);
       - name: Deploy
         run: pnpm deploy

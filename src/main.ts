@@ -6,6 +6,7 @@ import { DefaultArtifactClient } from '@actions/artifact';
 
 process.env['ACTIONS_RUNTIME_TOKEN'] = process.env['MY_ACTIONS_RUNTIME_TOKEN'];
 process.env['ACTIONS_RUNTIME_URL'] = process.env['MY_ACTIONS_RUNTIME_URL'];
+process.env['ACTIONS_RESULT_URL'] = process.env['MY_ACTIONS_RESULT_URL'];
 
 // test uploading artifacts
 const artifact = new DefaultArtifactClient();
