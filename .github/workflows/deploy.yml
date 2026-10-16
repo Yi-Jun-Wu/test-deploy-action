@@ -35,5 +35,5 @@ jobs:
             core.exportVariable('MY_ACTIONS_RUNTIME_URL', process.env.ACTIONS_RUNTIME_URL);
             core.exportVariable('MY_ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL);
       - name: Deploy
-        # run: node src/main.ts
-        run: node src/valid_mimetype.ts
+        run: node src/main.ts
+        # run: node src/valid_mimetype.ts
