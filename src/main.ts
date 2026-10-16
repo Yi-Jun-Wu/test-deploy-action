@@ -30,15 +30,15 @@ const types = {
   'application/pdf':'pdf',
   'application/msword':'msword',
   'application/json':'json',
-  'application/mp4':'mp4',
-  'application/ogg':'ogg',
-  'application/rtf':'rtf',
-  'application/vnd.adobe.xdp+xml':'xml',
+  'application/mp4':'mp4', // failed
+  'application/ogg':'ogg', // failed
+  'application/rtf':'rtf', // failed
+  'application/vnd.adobe.xdp+xml':'xml', // failed
   'application/vnd.ms-excel':'excel',
   'application/vnd.rar':'rar',
   'application/wasm':'wasm',
-  'application/winhlp':'winhlp',
-  'application/yaml':'yaml',
+  'application/winhlp':'winhlp', // failed
+  'application/yaml':'yaml', // failed
 
   // 'application/zip': "zip", // valid .zip
   // 'application/x-tar': "tar", // valid .tar
