@@ -2,5 +2,11 @@
 	"type": "module",
 	"devDependencies": {
 		"@types/node": "^26.6.5"
+	},
+	"scripts": {
+		"deploy": "node src/main.ts"
+	},
+	"dependencies": {
+		"@actions/artifact": "^6.3.1"
 	}
 }

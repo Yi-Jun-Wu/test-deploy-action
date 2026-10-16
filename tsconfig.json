@@ -6,6 +6,6 @@
     "rootDir": "./"
   },
   "include": [
-    ".github/**/*"
+    "src/**/*"
   ]
 }
