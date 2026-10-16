@@ -10,23 +10,12 @@ jobs:
       pages: write
       id-token: write
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-
-      # - name: Setup pnpm
-      #   uses: pnpm/action-setup@v6
-      #   with:
-      #     version: 12
-      # - name: Set up Node.js
-      #   uses: actions/setup-node@v7
-      #   with:
-      #     node-version: '26'
-      #     cache: 'pnpm'
-
-      # - name: Set up PNPM
-      #   run: pnpm ci
-          
         
       - uses: actions/github-script@v9
         with:
@@ -35,5 +24,8 @@ jobs:
             core.exportVariable('MY_ACTIONS_RUNTIME_URL', process.env.ACTIONS_RUNTIME_URL);
             core.exportVariable('MY_ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL);
       - name: Deploy
+        id: deployment
         run: node src/main.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # run: node src/valid_mimetype.ts

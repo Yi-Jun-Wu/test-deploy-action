@@ -1,33 +1,122 @@
-import {
-  uploadArtifact,
-  type UploadConfig,
-  VALID_MIME_TYPE,
-} from "./artifact-minify.ts";
-import { getIDToken } from "./core.ts";
+import { execSync } from "node:child_process";
+import { uploadArtifact } from "./artifact-minify.ts";
+import { getIDToken, setOutput } from "./core.ts";
+import { setTimeout } from "node:timers/promises";
+
+// ========== Prepare ==========
+execSync(`mkdir deploy`);
+execSync(`cp Readme.md deploy/index.html`);
+execSync(`tar --directory "deploy" -cvf "artifact.tar" .`);
 
 const auth = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
+const artifactId = await uploadArtifact(auth, "artifact.tar", "artifact", {
+  mime_type: "application/x-tar" as any,
+});
+
 const idToken = await getIDToken();
+const TOKEN = process.env["GITHUB_TOKEN"]!;
+const OWNER = process.env["GITHUB_REPOSITORY_OWNER"]!;
+const REPO = process.env["GITHUB_REPOSITORY"]!.split("/")[1]!;
+const GITHUB_SHA = process.env["GITHUB_SHA"]!;
 
-console.log(idToken);
+const pageDeploymentsUrl =
+  `https://api.github.com/repos/${OWNER}/${REPO}/pages/deployments`;
+const response = await fetch(pageDeploymentsUrl, {
+  method: "POST",
+  headers: {
+    "Accept": "application/vnd.github+json",
+    "Authorization": `Bearer ${TOKEN}`,
+    "X-GitHub-Api-Version": "2026-03-10",
+  },
+  body: JSON.stringify({
+    artifact_id: artifactId,
+    environment: "github-pages",
+    pages_build_version: GITHUB_SHA,
+    oidc_token: idToken,
+  }),
+});
+if (!response.ok) {
+  const errorText = await response.text();
+  throw new Error(
+    `Failed to deploy pages: ${response.status} ${response.statusText} - ${errorText}`,
+  );
+}
+const { id, status_url, page_url } = await response.json();
+console.log(
+  "Deploying Pages to:",
+  page_url,
+  "Deployment ID:",
+  id,
+  "Status URL:",
+  status_url,
+);
 
-// const url = process.env["MY_ACTIONS_RESULTS_URL"]!;
+// polling the status of the deployment until it is completed
+let last_status = undefined;
+while (true) {
+  await setTimeout(100); // 100ms
+  const statusResponse = await fetch(status_url, {
+    method: "GET",
+    headers: {
+      "Accept": "application/vnd.github+json",
+      "Authorization": `Bearer ${TOKEN}`,
+      "X-GitHub-Api-Version": "2026-03-10",
+    },
+  });
+  if (!statusResponse.ok) {
+    const errorText = await statusResponse.text();
+    throw new Error(
+      `Failed to get deployment status: ${statusResponse.status} ${statusResponse.statusText} - ${errorText}`,
+    );
+  }
+  const statusData = await statusResponse.json();
+  if (last_status !== statusData.status) {
+    console.log("Deployment status:", statusData.status);
+    last_status = statusData.status;
+  }
+  let can_exit = false;
+  switch (last_status) {
+    case "deployment_queued":
+    case "deployment_in_progress":
+    case "syncing_files":
+      // CANNOT delete the artifact yet, because the deployment is still in progress. Wait for the next status update.
+      break;
+    case "succeed":
+      can_exit = true;
+    // fall through
+    case "finished_file_sync":
+    case "updating_pages":
+    case "purging_cdn":
+      // // CAN delete the artifact now, because the artifact is no longer needed for the deployment.
+      // if (!file_deleted) {
+      //   const { id } = await artifact.deleteArtifact(artifactName);
+      //   const finishTime = performance.now();
+      //   console.log("Deleted Artifact ID:", id);
+      //   console.log("Artifact Existing Time:", finishTime - startTime, "ms");
+      //   file_deleted = true;
+      // }
+      break;
+    case "deployment_attempt_error":
+      console.warn("Deploy attemp error, retrying");
+      break;
+    case "deployment_cancelled":
+    case "deployment_failed":
+    case "deployment_content_failed":
+    case "deployment_lost":
+      // console.error("Deployment Failed. Reason:", status.data.status)
+      // failed = true;
+      can_exit = true;
+      break;
+    default:
+      // console.error("Unknown Status:", status.data.status)
+      break;
+  }
+  if (can_exit) {
+    break;
+  }
+}
 
-// const config: Partial<UploadConfig> = {
-//   // result_url_origin: '',
-//   // twirp_service: '',
-//   // artifact_version: 0,
-//   // block_size: 0,
-//   mime_type: "application/gzip",
-//   retention_seconds: 3600,
-// };
+console.log("Deployment finished. Check the status at:", status_url);
 
-// for (const type of VALID_MIME_TYPE) {
-//   config.mime_type = type;
-//   const result = await uploadArtifact(
-//     auth,
-//     "src/main.ts",
-//     type.replace(/[^A-Za-z0-9]+/g, "_"),
-//     config,
-//   );
-//   console.log(result);
-// }
+
+setOutput('page_url', page_url);
