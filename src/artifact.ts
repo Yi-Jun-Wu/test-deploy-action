@@ -19,6 +19,10 @@
  * Artifacts are always zipped, matching the toolkit's default (`skipArchive`
  * is not implemented), and paths inside the archive are relative to
  * `rootDirectory`.
+ *
+ * Deletion (`deleteArtifact`, the toolkit's internal variant) reuses the same
+ * service: `POST .../ListArtifacts` with a `name_filter` resolves the name, then
+ * `POST .../DeleteArtifact` removes it. See the function for details.
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -820,4 +824,132 @@ function crc32(buffer: Buffer): number {
     crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
   }
   return (crc ^ 0xffffffff) >>> 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Errors                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** The service could not find an artifact matching the request. */
+export class ArtifactNotFoundError extends Error {
+  constructor(message = "Artifact not found") {
+    super(message);
+    this.name = "ArtifactNotFoundError";
+  }
+}
+
+/** A response was received but was not usable. */
+export class InvalidResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidResponseError";
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Deletion (internal service variant)                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * An entry of `ListArtifactsResponse.artifacts`. `int64` fields are serialized
+ * as JSON strings, hence the `string` types.
+ */
+interface MonolithArtifact {
+  workflow_run_backend_id: string;
+  workflow_job_run_backend_id: string;
+  database_id: string;
+  name: string;
+  size: string;
+  created_at?: string;
+  digest?: string;
+}
+
+interface ListArtifactsResponse {
+  artifacts?: MonolithArtifact[];
+}
+
+interface DeleteArtifactResponse {
+  ok: boolean;
+  artifact_id: string;
+}
+
+/**
+ * Deletes an artifact from the workflow run the runtime token belongs to.
+ *
+ * This mirrors the toolkit's `deleteArtifactInternal`: instead of the GitHub
+ * REST API (`DELETE /repos/{owner}/{repo}/actions/artifacts/{id}`, which needs a
+ * PAT), it goes straight to the results service:
+ *
+ *   1. `POST .../ListArtifacts` with a `name_filter` to resolve the name to an
+ *      artifact. When several artifacts share the name, the newest one (highest
+ *      `database_id`) is picked.
+ *   2. `POST .../DeleteArtifact` keyed by the backend ids **reported by the
+ *      artifact itself** plus its name.
+ *
+ * Note that deleting by name only ever removes one artifact per call; older
+ * artifacts with the same name stay behind.
+ *
+ * @param name name of the artifact to delete
+ */
+export async function deleteArtifact(name: string): Promise<{ id: number }> {
+  validateArtifactName(name);
+
+  const token = getRuntimeToken();
+  const resultsServiceOrigin = getResultsServiceUrl();
+  const backendIds = getBackendIdsFromToken(token);
+
+  const listArtifactsResp = await withRetry("ListArtifacts", () =>
+    twirpRequest<ListArtifactsResponse>(
+      token,
+      resultsServiceOrigin,
+      "ListArtifacts",
+      {
+        workflow_run_backend_id: backendIds.workflowRunBackendId,
+        workflow_job_run_backend_id: backendIds.workflowJobRunBackendId,
+        // `name_filter` is a google.protobuf.StringValue, i.e. a plain JSON string.
+        name_filter: name,
+      },
+    ),
+  );
+
+  const artifacts = listArtifactsResp.artifacts ?? [];
+  if (artifacts.length === 0) {
+    throw new ArtifactNotFoundError(
+      `Artifact not found for name: ${name}`,
+    );
+  }
+
+  let artifact = artifacts[0];
+  if (artifacts.length > 1) {
+    artifact = [...artifacts].sort(
+      (a, b) => Number(b.database_id) - Number(a.database_id),
+    )[0];
+    log(
+      `More than one artifact found for a single name, deleting newest (id: ${artifact.database_id})`,
+    );
+  }
+
+  const deleteArtifactResp = await withRetry("DeleteArtifact", () =>
+    twirpRequest<DeleteArtifactResponse>(
+      token,
+      resultsServiceOrigin,
+      "DeleteArtifact",
+      {
+        workflow_run_backend_id: artifact.workflow_run_backend_id,
+        workflow_job_run_backend_id: artifact.workflow_job_run_backend_id,
+        name: artifact.name,
+      },
+    ),
+  );
+
+  if (!deleteArtifactResp.ok) {
+    throw new InvalidResponseError(
+      "DeleteArtifact: response from backend was not ok",
+    );
+  }
+
+  const artifactId = Number(deleteArtifactResp.artifact_id);
+  log(`Artifact '${name}' (ID: ${artifactId}) deleted`);
+
+  return { id: artifactId };
 }

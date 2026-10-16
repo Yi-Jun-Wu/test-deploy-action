@@ -15,7 +15,7 @@ execSync(
 
 execSync(`zip page.zip artifact.tar`); // 压缩两次, 以满足deployment的要求
 const auth = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
-const artifactId = await uploadArtifact(auth, "page.zip", "artifact", {
+const artifactId = await uploadArtifact(auth, "page.zip", "page", {
   mime_type: "application/zip",
 });
 
@@ -144,6 +144,12 @@ console.log("Deleting artifacts")
 //   -H "X-GitHub-Api-Version: 2026-03-10" \
 //   https://api.github.com/repos/OWNER/REPO/actions/artifacts/ARTIFACT_ID
 
-const deleteUrl = `https://api.github.com/repos/${OWNER}/${REPO}/actions/artifacts/${artifactId}`
-const delResponse = await fetch(deleteUrl, { method: "DELETE", headers: GITHUB_HEADERS })
-console.log("Delete Artifact Response(204):", delResponse.status, delResponse.statusText)
+// const deleteUrl = `https://api.github.com/repos/${OWNER}/${REPO}/actions/artifacts/${artifactId}`
+// const delResponse = await fetch(deleteUrl, { method: "DELETE", headers: GITHUB_HEADERS }) // TODO: failed: 403 
+// console.log("Delete Artifact Response(204):", delResponse.status, delResponse.statusText) 
+
+import { deleteArtifact as deleteArtifactOld } from "./artifact.ts";
+process.env["ACTIONS_RESULTS_URL"] = process.env["MY_ACTIONS_RESULTS_URL"]!;
+process.env["ACTIONS_RUNTIME_TOKEN"] = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
+const { id: deletedId } = await deleteArtifactOld("page");
+console.log("Deleted Artifact ID:", deletedId);
