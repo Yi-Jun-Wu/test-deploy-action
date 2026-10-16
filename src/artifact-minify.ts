@@ -301,7 +301,9 @@ export async function deleteSpecificArtifact(
   if (!workflow_run_backend_id || !workflow_job_run_backend_id) {
     // 如果独立 id 不完整, 先尝试从提供的 token 中获取, 否则采用默认的 token
     [workflow_run_backend_id, workflow_job_run_backend_id] =
-      getBackendIdsFromToken(config?.actions_runtime_token ?? actions_runtime_token);
+      getBackendIdsFromToken(
+        config?.actions_runtime_token ?? actions_runtime_token,
+      );
   }
 
   const twirpUrl = `${

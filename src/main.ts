@@ -1,5 +1,9 @@
 import { execSync } from "node:child_process";
-import { deleteArtifact, deleteSpecificArtifact, uploadArtifact } from "./artifact-minify.ts";
+import {
+  deleteArtifact,
+  deleteSpecificArtifact,
+  uploadArtifact,
+} from "./artifact-minify.ts";
 import { getIDToken, setOutput } from "./core.ts";
 import { setTimeout } from "node:timers/promises";
 
