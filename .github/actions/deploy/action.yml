@@ -1,23 +1,32 @@
 name: 'Deploy GitHub Pages site'
-description: 'A GitHub Action to deploy an dist folder as a GitHub Pages site'
+description: 'Deploy a directory as a GitHub Pages site without any toolkit dependency'
 author: 'GitHub'
-runs:
-  using: 'node24'
-  main: 'dist/index.mjs'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'
+
 inputs:
   token:
-    description: 'GitHub token'
+    description: 'GitHub token used to call the Pages deployment API.'
+    required: true
     default: ${{ github.token }}
-    required: true
   path:
-    description: 'Path of the directory containing the static assets.'
+    description: 'Path of the directory containing the static assets to deploy.'
     required: true
-    default: "dist/"
+    default: 'dist/'
   expire:
-    description: 'Duration after which artifact will be deleted in seconds.'
+    description: >-
+      Duration in seconds to poll the deployment before giving up. The uploaded
+      artifact is deleted once it is no longer needed. Set to 0 to keep the
+      artifact (it will then remain until its retention period ends).
     required: true
-    default: 30
+    default: '30'
 
 outputs:
   page_url:
-    description: 'URL to deployed GitHub Pages'
+    description: 'URL the deployed GitHub Pages site is served from.'
+
+runs:
+  using: 'node24'
+  main: 'index.mjs'

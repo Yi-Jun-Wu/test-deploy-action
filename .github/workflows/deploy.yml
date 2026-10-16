@@ -3,29 +3,31 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   deploy:
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-        
-      - uses: actions/github-script@v9
-        with:
-          script: |
-            core.exportVariable('MY_ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN);
-            core.exportVariable('MY_ACTIONS_RUNTIME_URL', process.env.ACTIONS_RUNTIME_URL);
-            core.exportVariable('MY_ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL);
+
+      - name: Build site
+        run: |
+          mkdir -p dist
+          cp README.md dist/
+          cp index.html dist/
+
       - name: Deploy
         id: deployment
-        run: node src/main.ts
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # run: node src/valid_mimetype.ts
+        uses: ./.github/actions/deploy
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist/
+          expire: '30'
