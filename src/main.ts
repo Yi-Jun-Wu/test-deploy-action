@@ -20,8 +20,8 @@
 
 import {upload} from './artifact-minify.ts'
 
-const auth = process.env['ACTIONS_RUNTIME_TOKEN']!
-const url = process.env['ACTIONS_RESULTS_URL']!
+const auth = process.env['MY_ACTIONS_RUNTIME_TOKEN']!
+const url = process.env['MY_ACTIONS_RESULTS_URL']!
 
 const result = await upload(
   auth,
