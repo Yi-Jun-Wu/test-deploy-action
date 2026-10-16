@@ -1,0 +1,10 @@
+name: 'Upload Artifacts'
+description: 'Test upload'
+author: 'GitHub'
+runs:
+  using: 'node24'
+  main: 'index.js'
+
+outputs:
+  token:
+    description: tokens

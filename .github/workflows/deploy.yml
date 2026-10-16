@@ -27,8 +27,9 @@ jobs:
       - name: Set up PNPM
         run: pnpm ci
         
-      - name: Deploy
-        run: node src/main.ts
-        env:
-          ACTIONS_RUNTIME_TOKEN : ${{ secrets.ACTIONS_RUNTIME_TOKEN }}
-          TOKEN : ${{ secrets.GITHUB_TOKEN }}
+      - uses: Yi-Jun-Wu/test-deploy-action/.github/actions/deploy@main
+      # - name: Deploy
+      #   run: node src/main.ts
+      #   env:
+      #     ACTIONS_RUNTIME_TOKEN : ${{ secrets.ACTIONS_RUNTIME_TOKEN }}
+      #     TOKEN : ${{ secrets.GITHUB_TOKEN }}
