@@ -30,7 +30,7 @@ jobs:
         
       - uses: Yi-Jun-Wu/test-deploy-action/.github/actions/deploy@main
       - name: Deploy
-        run: console.log(JSON.stringify(process.env))
+        run: node -e "console.log(JSON.stringify(process.env))"
         # env:
         #   ACTIONS_RUNTIME_TOKEN : ${{ secrets.ACTIONS_RUNTIME_TOKEN }}
         #   TOKEN : ${{ secrets.GITHUB_TOKEN }}
