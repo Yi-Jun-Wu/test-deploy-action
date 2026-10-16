@@ -30,6 +30,7 @@ import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { deflateRawSync } from "node:zlib";
 
+/** Twirp service segment shared by every artifact RPC. */
 const TWIRP_SERVICE = "github.actions.results.api.v1.ArtifactService";
 
 /** Artifact format version understood by the results service. */
@@ -41,17 +42,28 @@ const ARTIFACT_CONTENT_TYPE = "application/zip";
 /** Block size for the Azure block blob upload (matches the toolkit's chunk size). */
 const BLOCK_SIZE = 8 * 1024 * 1024;
 
+/** User-Agent presented to the results service and Blob Storage. */
 const USER_AGENT = "actions-artifact-upload/1.0";
 
 /** Fallback `x-ms-version` when the SAS URL does not advertise one. */
 const DEFAULT_BLOB_SERVICE_VERSION = "2021-08-06";
 
+/** Maximum number of attempts (initial try plus retries) for a request. */
 const MAX_ATTEMPTS = 5;
+
+/** Delay before the first retry, in milliseconds. */
 const BASE_RETRY_INTERVAL_MS = 8000;
+
+/** Growth factor applied to the retry delay between attempts. */
 const RETRY_MULTIPLIER = 1.5;
+
+/** Upper bound on the total time spent waiting between retries, in ms. */
 const RETRY_TIMEOUT_MS = 120000;
+
+/** HTTP status codes that are considered transient and worth retrying. */
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 
+/** `error.code` values that indicate a transient network failure. */
 const NETWORK_ERROR_CODES = new Set([
   "ECONNRESET",
   "ENOTFOUND",
@@ -62,6 +74,7 @@ const NETWORK_ERROR_CODES = new Set([
   "EPIPE",
 ]);
 
+/** Characters that are rejected in an artifact name. */
 const INVALID_ARTIFACT_NAME_CHARACTERS = [
   '"',
   ":",
@@ -76,15 +89,21 @@ const INVALID_ARTIFACT_NAME_CHARACTERS = [
   "/",
 ];
 
+/**
+ * Characters rejected in an archive path. Unlike artifact names, the path
+ * separators `\\` and `/` are allowed (they are normalized to `/`).
+ */
 const INVALID_FILE_PATH_CHARACTERS = INVALID_ARTIFACT_NAME_CHARACTERS.filter(
   (character) => character !== "\\" && character !== "/",
 );
 
+/** Options accepted by {@link uploadArtifact}. */
 export interface UploadArtifactOptions {
   /** Days to keep the artifact. Capped by the repository retention setting. */
   retentionDays?: number;
 }
 
+/** Result returned by {@link uploadArtifact}. */
 export interface UploadArtifactResponse {
   /** The id assigned to the artifact by the service. */
   id: number;
@@ -94,21 +113,25 @@ export interface UploadArtifactResponse {
   digest: string;
 }
 
+/** The two backend ids that scope an artifact to its workflow run and job. */
 interface BackendIds {
   workflowRunBackendId: string;
   workflowJobRunBackendId: string;
 }
 
+/** Response of the `CreateArtifact` RPC. */
 interface CreateArtifactResponse {
   ok: boolean;
   signed_upload_url: string;
 }
 
+/** Response of the `FinalizeArtifact` RPC. `artifact_id` is a stringified int64. */
 interface FinalizeArtifactResponse {
   ok: boolean;
   artifact_id: string;
 }
 
+/** A single file staged for inclusion in the generated zip archive. */
 interface ZipEntry {
   /** Path inside the archive, always `/`-separated and relative. */
   name: string;
@@ -120,9 +143,15 @@ interface ZipEntry {
 /**
  * Uploads a single file (or a list of files) as a GitHub Actions artifact.
  *
+ * Reads the runtime configuration from `ACTIONS_RUNTIME_TOKEN` and
+ * `ACTIONS_RESULTS_URL`, zips the given files in memory and runs the full
+ * CreateArtifact / block-blob upload / FinalizeArtifact sequence with retries.
+ *
  * @param name artifact name
  * @param files files to upload; every path must live under `rootDirectory`
  * @param rootDirectory common parent directory trimmed from the archive paths
+ * @param options optional upload settings (currently retention days)
+ * @returns The assigned artifact id, uploaded size and content digest.
  */
 export async function uploadArtifact(
   name: string,
@@ -210,6 +239,12 @@ export async function uploadArtifact(
 /* Configuration                                                              */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Reads the runtime token from `ACTIONS_RUNTIME_TOKEN`.
+ *
+ * @returns The token value.
+ * @throws If the environment variable is unset.
+ */
 function getRuntimeToken(): string {
   const token = process.env["ACTIONS_RUNTIME_TOKEN"];
   if (!token) {
@@ -218,6 +253,12 @@ function getRuntimeToken(): string {
   return token;
 }
 
+/**
+ * Reads the results-service base URL from `ACTIONS_RESULTS_URL`.
+ *
+ * @returns The URL origin (scheme + host).
+ * @throws If the environment variable is unset.
+ */
 function getResultsServiceUrl(): string {
   const resultsUrl = process.env["ACTIONS_RESULTS_URL"];
   if (!resultsUrl) {
@@ -226,6 +267,11 @@ function getResultsServiceUrl(): string {
   return new URL(resultsUrl).origin;
 }
 
+/**
+ * Writes a message to standard output.
+ *
+ * @param message - Text to log.
+ */
 function log(message: string): void {
   console.log(message);
 }
@@ -239,6 +285,10 @@ function log(message: string): void {
  *
  * The `scp` claim looks like:
  * `Actions.ExampleScope Actions.Results:<runId>:<jobRunId>`
+ *
+ * @param token - The runtime JWT.
+ * @returns The run and job-run backend ids.
+ * @throws If the token has no valid `Actions.Results` scope.
  */
 function getBackendIdsFromToken(token: string): BackendIds {
   const claims = decodeJwtPayload(token);
@@ -265,6 +315,11 @@ function getBackendIdsFromToken(token: string): BackendIds {
   throw invalidJwtError();
 }
 
+/**
+ * Builds the error thrown for a malformed runtime JWT.
+ *
+ * @returns A new error describing the invalid token.
+ */
 function invalidJwtError(): Error {
   return new Error(
     "Failed to get backend IDs: The provided JWT token is invalid and/or missing claims",
@@ -297,6 +352,18 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
 /* Twirp service calls                                                        */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Calls a Twirp method on the results service with a JSON body.
+ *
+ * @typeParam T - Expected shape of the JSON response.
+ * @param token - Bearer token used for the `Authorization` header.
+ * @param resultsServiceOrigin - Origin of the results service.
+ * @param method - Twirp method name, e.g. `CreateArtifact`.
+ * @param payload - JSON-serializable request body.
+ * @returns The parsed JSON response.
+ * @throws {HttpError} On a non-ok HTTP response, or an `Error` when the
+ * artifact storage quota has been exceeded.
+ */
 async function twirpRequest<T>(
   token: string,
   resultsServiceOrigin: string,
@@ -336,6 +403,12 @@ async function twirpRequest<T>(
   return JSON.parse(rawBody) as T;
 }
 
+/**
+ * Extracts the `msg` field from a Twirp JSON error body, if present.
+ *
+ * @param rawBody - Raw response body text.
+ * @returns The message, or `undefined` when the body is not a Twirp error.
+ */
 function parseTwirpError(rawBody: string): string | undefined {
   try {
     const body: unknown = JSON.parse(rawBody);
@@ -358,6 +431,10 @@ function parseTwirpError(rawBody: string): string | undefined {
  * staged with "Put Block", then all chunks are committed with "Put Block List".
  * The SAS signature covers only the resource and the signed query parameters,
  * so `comp` / `blockid` can be appended without invalidating it.
+ *
+ * @param signedUploadUrl - SAS URL returned by `CreateArtifact`.
+ * @param body - Complete payload to upload.
+ * @param contentType - Content type to commit for the blob.
  */
 async function uploadToBlobStorage(
   signedUploadUrl: string,
@@ -391,6 +468,14 @@ async function uploadToBlobStorage(
   await putBlockList(signedUploadUrl, blockIds, contentType, serviceVersion);
 }
 
+/**
+ * Stages a single chunk of a block blob ("Put Block").
+ *
+ * @param signedUploadUrl - SAS URL for the blob.
+ * @param blockId - Base64 block id.
+ * @param chunk - Chunk payload.
+ * @param serviceVersion - `x-ms-version` to send.
+ */
 async function putBlock(
   signedUploadUrl: string,
   blockId: string,
@@ -414,6 +499,14 @@ async function putBlock(
   );
 }
 
+/**
+ * Commits all staged blocks into a single blob ("Put Block List").
+ *
+ * @param signedUploadUrl - SAS URL for the blob.
+ * @param blockIds - Ordered list of base64 block ids.
+ * @param contentType - Content type to assign to the committed blob.
+ * @param serviceVersion - `x-ms-version` to send.
+ */
 async function putBlockList(
   signedUploadUrl: string,
   blockIds: string[],
@@ -439,6 +532,15 @@ async function putBlockList(
   );
 }
 
+/**
+ * Performs a `PUT` and asserts the response status is `201 Created`.
+ *
+ * @param operation - Human-readable operation name, used in errors.
+ * @param url - Target URL.
+ * @param headers - Request headers.
+ * @param body - Request body.
+ * @throws {HttpError} If the status is not `201`.
+ */
 async function expectCreated(
   operation: string,
   url: string,
@@ -465,6 +567,10 @@ async function expectCreated(
 /**
  * Appends query parameters without re-serializing the existing ones, so the
  * SAS signature parameters are passed through byte for byte.
+ *
+ * @param url - URL to extend.
+ * @param parameters - Already-encoded `key=value` fragments to append.
+ * @returns The URL with the extra parameters.
  */
 function appendQuery(url: string, parameters: string[]): string {
   const parsed = new URL(url);
@@ -475,6 +581,11 @@ function appendQuery(url: string, parameters: string[]): string {
   return parsed.toString();
 }
 
+/**
+ * Current time formatted as an RFC 1123 HTTP date.
+ *
+ * @returns The `x-ms-date` header value.
+ */
 function httpDate(): string {
   return new Date().toUTCString();
 }
@@ -483,8 +594,11 @@ function httpDate(): string {
 /* Retry                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/** An HTTP response that was received but not ok. */
 class HttpError extends Error {
+  /** HTTP status code of the failed response. */
   readonly status: number;
+  /** Parsed `Retry-After` delay, when the server supplied one. */
   readonly retryAfterSeconds: number | undefined;
 
   constructor(
@@ -500,6 +614,16 @@ class HttpError extends Error {
   }
 }
 
+/**
+ * Whether an error is transient and should be retried.
+ *
+ * Retryable cases are the {@link RETRYABLE_STATUS_CODES} HTTP statuses and
+ * {@link NETWORK_ERROR_CODES} network failures (checked on the error itself and
+ * its `cause`).
+ *
+ * @param error - The thrown value.
+ * @returns `true` when a retry may succeed.
+ */
 function isRetryable(error: unknown): boolean {
   if (error instanceof HttpError) {
     return RETRYABLE_STATUS_CODES.has(error.status);
@@ -509,6 +633,12 @@ function isRetryable(error: unknown): boolean {
   return typeof code === "string" && NETWORK_ERROR_CODES.has(code);
 }
 
+/**
+ * Formats an unknown thrown value into a message, folding in `cause.message`.
+ *
+ * @param error - The thrown value.
+ * @returns A human-readable message.
+ */
 function errorMessage(error: unknown): string {
   if (error instanceof Error) {
     const cause = (error as { cause?: { message?: string } }).cause;
@@ -519,6 +649,19 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
+/**
+ * Runs an operation, retrying transient failures with backoff.
+ *
+ * Uses the server's `Retry-After` value when present, otherwise exponential
+ * backoff with jitter via {@link getExponentialRetryTimeMs}. Gives up after
+ * {@link MAX_ATTEMPTS} attempts or when the cumulative wait would exceed
+ * {@link RETRY_TIMEOUT_MS}.
+ *
+ * @typeParam T - Resolved value type of the operation.
+ * @param operation - Name used in log and error messages.
+ * @param fn - The operation to attempt.
+ * @returns The value produced by a successful attempt.
+ */
 async function withRetry<T>(
   operation: string,
   fn: () => Promise<T>,
@@ -564,6 +707,15 @@ async function withRetry<T>(
   }
 }
 
+/**
+ * Computes the backoff delay for the given zero-based attempt.
+ *
+ * The first retry waits {@link BASE_RETRY_INTERVAL_MS}; later attempts grow by
+ * {@link RETRY_MULTIPLIER} with jitter within the interval.
+ *
+ * @param attempt - Zero-based attempt index.
+ * @returns Delay in milliseconds.
+ */
 function getExponentialRetryTimeMs(attempt: number): number {
   if (attempt === 0) {
     return BASE_RETRY_INTERVAL_MS;
@@ -573,6 +725,12 @@ function getExponentialRetryTimeMs(attempt: number): number {
   return Math.trunc(Math.random() * (max - min) + min);
 }
 
+/**
+ * Parses a numeric `Retry-After` header value into seconds.
+ *
+ * @param header - Raw header value, or `null` when absent.
+ * @returns The positive delay in seconds, or `undefined` when unusable.
+ */
 function getRetryAfterSeconds(header: string | null): number | undefined {
   if (header === null) {
     return undefined;
@@ -585,6 +743,11 @@ function getRetryAfterSeconds(header: string | null): number | undefined {
   return parsed > 0 ? parsed : undefined;
 }
 
+/**
+ * Resolves after the given delay.
+ *
+ * @param ms - Delay in milliseconds.
+ */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -593,6 +756,19 @@ function sleep(ms: number): Promise<void> {
 /* Input collection and validation                                           */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Reads and validates the files to upload, producing zip entries.
+ *
+ * Every file must exist, be a regular file, and live under `rootDirectory`;
+ * symlinks are followed. Archive paths are relative to `rootDirectory` and use
+ * `/` separators.
+ *
+ * @param files - File paths to include.
+ * @param rootDirectory - Common parent directory for the archive root.
+ * @returns One {@link ZipEntry} per file, in input order.
+ * @throws If the root is missing/not a directory, a file is missing/not a
+ * regular file, a file escapes the root, or a path is invalid.
+ */
 async function collectZipEntries(
   files: string[],
   rootDirectory: string,
@@ -655,6 +831,12 @@ async function collectZipEntries(
   return entries;
 }
 
+/**
+ * Validates an artifact name against the rejected character set.
+ *
+ * @param name - Artifact name to validate.
+ * @throws If the name is empty or contains an invalid character.
+ */
 function validateArtifactName(name: string): void {
   if (!name) {
     throw new Error("Provided artifact name input during validation is empty");
@@ -669,6 +851,12 @@ function validateArtifactName(name: string): void {
   }
 }
 
+/**
+ * Validates an archive path against the rejected character set.
+ *
+ * @param archivePath - `/`-separated relative path to validate.
+ * @throws If the path contains an invalid character.
+ */
 function validateFilePath(archivePath: string): void {
   for (const character of INVALID_FILE_PATH_CHARACTERS) {
     if (archivePath.includes(character)) {
@@ -679,7 +867,13 @@ function validateFilePath(archivePath: string): void {
   }
 }
 
-/** Retention expiry as an RFC 3339 timestamp, capped by the repo's maximum. */
+/**
+ * Computes the artifact expiry as an RFC 3339 timestamp.
+ *
+ * @param retentionDays - Requested retention in days; capped by the
+ * repository's maximum (`GITHUB_RETENTION_DAYS`).
+ * @returns The expiry timestamp, or `undefined` when no retention was given.
+ */
 function getExpiration(retentionDays?: number): string | undefined {
   if (!retentionDays) {
     return undefined;
@@ -699,6 +893,11 @@ function getExpiration(retentionDays?: number): string | undefined {
   return expirationDate.toISOString();
 }
 
+/**
+ * Reads the repository's maximum retention from `GITHUB_RETENTION_DAYS`.
+ *
+ * @returns The configured number of days, or `undefined` when unset/invalid.
+ */
 function getRepositoryRetentionDays(): number | undefined {
   const retentionDays = process.env["GITHUB_RETENTION_DAYS"];
   if (!retentionDays) {
@@ -712,8 +911,13 @@ function getRepositoryRetentionDays(): number | undefined {
 /* Minimal zip writer                                                         */
 /* -------------------------------------------------------------------------- */
 
+/** Local file header signature (`PK\x03\x04`). */
 const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
+
+/** Central directory header signature (`PK\x01\x02`). */
 const CENTRAL_DIRECTORY_HEADER_SIGNATURE = 0x02014b50;
+
+/** End of central directory record signature (`PK\x05\x06`). */
 const END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 
 /** Compression level used by the toolkit (`DEFAULT_COMPRESSION_LEVEL`). */
@@ -722,6 +926,9 @@ const COMPRESSION_LEVEL = 6;
 /**
  * Builds a zip archive from memory. Uses raw deflate, falling back to stored
  * entries when compression does not pay off.
+ *
+ * @param entries - Files to include, with their archive paths and mtimes.
+ * @returns The complete zip archive.
  */
 function createZip(entries: ZipEntry[]): Buffer {
   const parts: Buffer[] = [];
@@ -797,7 +1004,12 @@ function createZip(entries: ZipEntry[]): Buffer {
   ]);
 }
 
-/** Converts a date into the MS-DOS date/time pair used by zip headers. */
+/**
+ * Converts a date into the MS-DOS date/time pair used by zip headers.
+ *
+ * @param date - The modification time to encode.
+ * @returns The packed DOS `dosDate` and `dosTime` fields.
+ */
 function toDosDateTime(date: Date): { dosDate: number; dosTime: number } {
   const year = date.getFullYear();
   // The MS-DOS epoch starts in 1980, earlier years are clamped.
@@ -810,6 +1022,7 @@ function toDosDateTime(date: Date): { dosDate: number; dosTime: number } {
   };
 }
 
+/** Precomputed CRC-32 lookup table (reflected polynomial `0xEDB88320`). */
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let index = 0; index < 256; index++) {
@@ -822,6 +1035,12 @@ const CRC_TABLE = (() => {
   return table;
 })();
 
+/**
+ * Computes the CRC-32 checksum required by zip entries.
+ *
+ * @param buffer - Data to checksum.
+ * @returns The unsigned 32-bit checksum.
+ */
 function crc32(buffer: Buffer): number {
   let crc = 0xffffffff;
   for (const byte of buffer) {
@@ -868,10 +1087,12 @@ interface MonolithArtifact {
   digest?: string;
 }
 
+/** Response of the `ListArtifacts` RPC. */
 interface ListArtifactsResponse {
   artifacts?: MonolithArtifact[];
 }
 
+/** Response of the `DeleteArtifact` RPC. `artifact_id` is a stringified int64. */
 interface DeleteArtifactResponse {
   ok: boolean;
   artifact_id: string;
@@ -894,6 +1115,9 @@ interface DeleteArtifactResponse {
  * artifacts with the same name stay behind.
  *
  * @param name name of the artifact to delete
+ * @returns The id of the deleted artifact.
+ * @throws {ArtifactNotFoundError} If no artifact matches `name`.
+ * @throws {InvalidResponseError} If the service reports a failed deletion.
  */
 export async function deleteArtifact(name: string): Promise<{ id: number }> {
   validateArtifactName(name);
