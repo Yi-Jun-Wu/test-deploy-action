@@ -57,5 +57,7 @@ for (const [type, name] of Object.entries(types)) {
       1
     )
     console.log(result)
+  }catch (error) {
+    console.error(`Failed to upload artifact for type ${type}:`, error)
   }
 }
