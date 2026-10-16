@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["node"],
+    "rootDir": "./"
+  },
+  "include": [
+    ".github/**/*"
+  ]
+}
