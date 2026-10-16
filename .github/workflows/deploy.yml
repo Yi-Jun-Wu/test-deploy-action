@@ -28,7 +28,7 @@ jobs:
         run: pnpm ci
           
         
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v9
         with:
           script: |
             core.exportVariable('MY_ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN);
