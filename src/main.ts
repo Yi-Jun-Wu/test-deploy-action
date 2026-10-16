@@ -17,6 +17,7 @@ const config: Partial<UploadConfig> = {
 };
 
 for (const type of VALID_MIME_TYPE) {
+  config.mime_type = type;
   const result = await uploadArtifact(
     auth,
     "src/main.ts",
