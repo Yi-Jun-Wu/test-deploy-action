@@ -28,4 +28,4 @@ jobs:
       - name: Deploy
         run: pnpm deploy
         env:
-          ACTIONS_RUNTIME_TOKEN : ${{ secrets.GITHUB_TOKEN }}
+          TOKEN : ${{ secrets.GITHUB_TOKEN }}

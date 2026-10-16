@@ -11,6 +11,9 @@ importers:
       '@actions/artifact':
         specifier: ^6.3.1
         version: 6.3.1
+      '@actions/core':
+        specifier: ^3.0.1
+        version: 3.0.1
     devDependencies:
       '@types/node':
         specifier: ^26.6.5
