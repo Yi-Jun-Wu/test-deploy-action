@@ -8,10 +8,14 @@ import { setTimeout } from "node:timers/promises";
 execSync(`mkdir deploy`);
 execSync(`cp README.md deploy/`);
 execSync(`cp index.html deploy/`);
-execSync(`tar --dereference --hard-dereference --directory "deploy" -cvf "artifact.tar" .`);
+execSync(
+  `tar --dereference --hard-dereference --directory "deploy" -cvf "artifact.tar" .`,
+);
 // execSync(`zip artifact.zip artifact.tar`); // 压缩两次, 以满足deployment的要求
 
-const auth = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
+// const auth = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
+process.env["ACTIONS_RESULTS_URL"] = process.env["MY_ACTIONS_RESULTS_URL"]!;
+process.env["ACTIONS_RUNTIME_TOKEN"] = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
 const resp = await uploadArtifact("page", ["artifact.tar"], "./");
 const artifactId = resp.id;
 // const artifactId = await uploadArtifact(auth, "artifact.tar", "artifact", {
@@ -58,8 +62,10 @@ console.log(
 
 // polling the status of the deployment until it is completed
 let last_status = undefined;
+let sleep_time = 20;
 while (true) {
-  await setTimeout(100); // 100ms
+  await setTimeout(sleep_time); // 100ms
+  sleep_time = Math.min(Math.round(sleep_time * 1.5), 5000);
   const statusResponse = await fetch(status_url, {
     method: "GET",
     headers: {
@@ -123,5 +129,4 @@ while (true) {
 
 console.log("Deployment finished. Check the status at:", status_url);
 
-
-setOutput('page_url', page_url);
+setOutput("page_url", page_url);
