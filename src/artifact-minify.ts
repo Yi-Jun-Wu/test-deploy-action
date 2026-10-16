@@ -3,8 +3,9 @@ import {readFile} from 'node:fs/promises'
 
 const TWIRP_SERVICE = 'github.actions.results.api.v1.ArtifactService'
 const ARTIFACT_VERSION = 7
-// const ARTIFACT_CONTENT_TYPE = 'application/zip'
-const ARTIFACT_CONTENT_TYPE = 'application/x-tar'
+// const ARTIFACT_CONTENT_TYPE = 'application/zip'  // valid .zip
+// const ARTIFACT_CONTENT_TYPE = 'application/x-tar' // valid .tar
+const ARTIFACT_CONTENT_TYPE = 'application/x-7z-compressed'
 const BLOCK_SIZE = 8 * 1024 * 1024
 
 export async function upload(
