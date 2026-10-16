@@ -6,7 +6,7 @@ export default defineConfig({
   platform: 'node',
   target: 'node24',
   outDir: 'dist',
-  // minify: true,
+  minify: true,
   clean: true,
   dts: false,
   treeshake: true,

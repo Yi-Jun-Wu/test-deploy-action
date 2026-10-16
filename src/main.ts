@@ -11,12 +11,23 @@ execSync(
   `tar --dereference --hard-dereference --directory "deploy" -cvf "artifact.tar" .`,
 );
 
+// #ifdef USE_MINIFY_METHOD
+
 execSync(`zip page.zip artifact.tar`); // 压缩两次, 以满足deployment的要求
 const auth = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
 const artifactId = await uploadArtifact(auth, "page.zip", "artifact", {
   mime_type: "application/zip",
 });
 
+// #else
+
+// import { uploadArtifact as uploadArtifactOld } from "./artifact.ts";
+// process.env["ACTIONS_RESULTS_URL"] = process.env["MY_ACTIONS_RESULTS_URL"]!;
+// process.env["ACTIONS_RUNTIME_TOKEN"] = process.env["MY_ACTIONS_RUNTIME_TOKEN"]!;
+// const resp = await uploadArtifactOld("page", ["artifact.tar"], "./");
+// const artifactId = resp.id;
+
+// #endif
 
 const idToken = await getIDToken();
 const TOKEN = process.env["GITHUB_TOKEN"]!;
@@ -24,15 +35,17 @@ const OWNER = process.env["GITHUB_REPOSITORY_OWNER"]!;
 const REPO = process.env["GITHUB_REPOSITORY"]!.split("/")[1]!;
 const GITHUB_SHA = process.env["GITHUB_SHA"]!;
 
+const GITHUB_HEADERS = {
+  "Accept": "application/vnd.github+json",
+  "Authorization": `Bearer ${TOKEN}`,
+  "X-GitHub-Api-Version": "2026-03-10",
+};
+
 const pageDeploymentsUrl =
   `https://api.github.com/repos/${OWNER}/${REPO}/pages/deployments`;
 const response = await fetch(pageDeploymentsUrl, {
   method: "POST",
-  headers: {
-    "Accept": "application/vnd.github+json",
-    "Authorization": `Bearer ${TOKEN}`,
-    "X-GitHub-Api-Version": "2026-03-10",
-  },
+  headers: GITHUB_HEADERS,
   body: JSON.stringify({
     artifact_id: artifactId,
     environment: "github-pages",
@@ -64,11 +77,7 @@ while (true) {
   sleep_time = Math.min(Math.round(sleep_time * 1.5), 5000);
   const statusResponse = await fetch(status_url, {
     method: "GET",
-    headers: {
-      "Accept": "application/vnd.github+json",
-      "Authorization": `Bearer ${TOKEN}`,
-      "X-GitHub-Api-Version": "2026-03-10",
-    },
+    headers: GITHUB_HEADERS,
   });
   if (!statusResponse.ok) {
     const errorText = await statusResponse.text();
@@ -126,3 +135,15 @@ while (true) {
 console.log("Deployment finished. Check the status at:", status_url);
 
 setOutput("page_url", page_url);
+
+console.log("Deleting artifacts")
+// curl -L \
+//   -X DELETE \
+//   -H "Accept: application/vnd.github+json" \
+//   -H "Authorization: Bearer <YOUR-TOKEN>" \
+//   -H "X-GitHub-Api-Version: 2026-03-10" \
+//   https://api.github.com/repos/OWNER/REPO/actions/artifacts/ARTIFACT_ID
+
+const deleteUrl = `https://api.github.com/repos/${OWNER}/${REPO}/actions/artifacts/${artifactId}`
+const delResponse = await fetch(deleteUrl, { method: "DELETE", headers: GITHUB_HEADERS })
+console.log("Delete Artifact Response(204):", delResponse.status, delResponse.statusText)
